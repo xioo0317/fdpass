@@ -1,0 +1,8 @@
+build/
+out/
+*.so
+*.o
+*.log
+test_fdpass
+*.bak.*
+tests/jni/out/

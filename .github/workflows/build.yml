@@ -1,0 +1,50 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # 行为验证：host 侧真实 SCM_RIGHTS 回环测试 + 导出符号契约检查
+  host-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: 编译并运行 core 回环测试
+        run: make check
+      - name: 真实 JVM JNI 冒烟测试
+        run: make check-jni
+
+  # 产出可直接替换的 Android .so（GitHub runner 预装 NDK）
+  android:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: 定位 NDK
+        run: |
+          for v in ANDROID_NDK_LATEST_HOME ANDROID_NDK_HOME; do
+            p="${!v:-}"
+            if [ -n "$p" ] && [ -f "$p/build/cmake/android.toolchain.cmake" ]; then
+              echo "ANDROID_NDK_HOME=$p" >> "$GITHUB_ENV"
+              echo "使用 NDK: $p"
+              break
+            fi
+          done
+      - name: 编译 libfdpass.so
+        run: ./build.sh "${{ matrix.abi }}"
+      - name: 导出符号契约复核
+        run: ./tests/check_symbols.sh "" "out/${{ matrix.abi }}/libfdpass.so"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libfdpass-${{ matrix.abi }}
+          path: out/${{ matrix.abi }}/libfdpass.so
+          if-no-files-found: error
